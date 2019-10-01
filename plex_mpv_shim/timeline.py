@@ -12,7 +12,6 @@ except:
 from io import BytesIO
 
 from .conf import settings
-from .player import playerManager
 from .subscribers import remoteSubscriberManager
 from .utils import Timer
 
@@ -29,8 +28,12 @@ class TimelineManager(threading.Thread):
         self.halt           = False
         self.trigger        = threading.Event()
         self.is_idle        = True
+        self.player         = None
 
         threading.Thread.__init__(self)
+
+    def set_player(self, player):
+        self.player = player
 
     def stop(self):
         self.halt = True
@@ -39,9 +42,9 @@ class TimelineManager(threading.Thread):
     def run(self):
         force_next = False
         while not self.halt:
-            if (playerManager._player and playerManager._video) or force_next:
-                playerManager.update()
-                if not playerManager.is_paused() or force_next:
+            if (self.player is not None and self.player.has_media_item()) or force_next:
+                # playerManager.update()
+                if self.player.is_playing() or force_next:
                     self.SendTimelineToSubscribers()
                 self.delay_idle()
             force_next = False
@@ -122,49 +125,35 @@ class TimelineManager(threading.Thread):
         # Note: location is set to "" to avoid pop-up of navigation menu. This may be abuse of the API.
         options = {
             "location": "",
-            "state":    playerManager.get_state(),
-            "type":     "video"
+            "state":    self.player.get_state(),
+            "type":     self.player.get_type()
         }
         controllable = []
 
-        video  = playerManager._video
-        player = playerManager._player
-
         # The playback_time value can take on the value of none, probably
         # when playback is complete. This avoids the thread crashing.
-        if video and not player.playback_abort and player.playback_time:
-            media = playerManager._video.parent
+        if self.player.has_media_item():
 
             options["location"]          = "fullScreenVideo"
-            options["time"]              = player.playback_time * 1e3
+            options["time"]              = self.player.get_play_time()
             options["autoPlay"]          = '1' if settings.auto_play else '0'
-            
-            if video.is_transcode:
-                trs_audio, trs_subtitle = video.get_transcode_streams()
-                if trs_subtitle:
-                    options["subtitleStreamID"] = trs_subtitle
-                if trs_audio:
-                    options["audioStreamID"] = trs_audio
-            else:
-                if player.sub != 'no':
-                    options["subtitleStreamID"] = video.subtitle_uid.get(player.sub, '')
 
-                if player.audio != 'no':
-                    options["audioStreamID"] = video.audio_uid.get(player.audio, '')
-
-            options["ratingKey"]         = video.get_video_attr("ratingKey")
-            options["key"]               = video.get_video_attr("key")
-            options["containerKey"]      = video.get_video_attr("key")
-            options["guid"]              = video.get_video_attr("guid")
-            options["duration"]          = video.get_video_attr("duration", "0")
-            options["address"]           = media.path.hostname
-            options["protocol"]          = media.path.scheme
-            options["port"]              = media.path.port
-            options["machineIdentifier"] = media.get_machine_identifier()
+            options["ratingKey"]         = self.player.get_ratingKey()
+            options["key"]               = self.player.get_key()
+            options["containerKey"]      = self.player.get_key()
+            options["guid"]              = self.player.get_guid()
+            options["duration"]          = self.player.get_duration()
+            options["address"]           = self.player.get_hostname()
+            options["protocol"]          = self.player.get_scheme()
+            options["port"]              = self.player.get_port()
+            options["machineIdentifier"] = self.player.get_machine_identifier()
             options["seekRange"]         = "0-%s" % options["duration"]
 
-            if media.play_queue:
-                options.update(media.get_queue_info())
+            if self.player.has_play_queue():
+                options["playQueueID"] = self.player.get_playQueueID()
+                options["playQueueVersion"] = self.player.get_playQueueVersion()
+                options["playQueueItemID"] = self.player.get_playQueueItemID()
+                options["containerKey"] = self.player.get_playQueueKey()
 
             controllable.append("playPause")
             controllable.append("stop")
@@ -174,14 +163,10 @@ class TimelineManager(threading.Thread):
             controllable.append("skipTo")
             controllable.append("autoPlay")
 
-            if not video.is_transcode:
-                controllable.append("subtitleStream")
-                controllable.append("audioStream")
-
-            if video.parent.has_next:
+            if self.player.has_next():
                 controllable.append("skipNext")
             
-            if video.parent.has_prev:
+            if self.player.has_prev():
                 controllable.append("skipPrevious")
 
             # If the duration is unknown, disable seeking
@@ -190,12 +175,8 @@ class TimelineManager(threading.Thread):
                 options.pop("seekRange")
                 controllable.remove("seekTo")
 
-            # Volume control is enabled only if output isn't HDMI,
-            # although technically I'm pretty sure we can still control
-            # the volume even if the output is hdmi...
-            if settings.audio_output != "hdmi":
-                controllable.append("volume")
-                options["volume"] = str(playerManager.get_volume(percent=True)*100 or 0)
+            controllable.append("volume")
+            options["volume"] = str(self.player.get_volume())
 
             options["controllable"] = ",".join(controllable)
         else:

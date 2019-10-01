@@ -23,7 +23,6 @@ from io import BytesIO
 
 from .conf import settings
 from .media import Media
-from .player import playerManager
 from .subscribers import remoteSubscriberManager, RemoteSubscriber
 from .timeline import timelineManager
 
@@ -34,13 +33,14 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 class HttpHandler(SimpleHTTPRequestHandler):
     xmlOutput   = None
     completed   = False
+    player      = None
     
     handlers    = (
         (("/resources",),                       "resources"),
         (("/player/playback/playMedia",
           "/player/application/playMedia",),    "playMedia"),
-        (("/player/playback/stepForward",
-          "/player/playback/stepBack",),        "stepFunction"),
+        (("/player/playback/stepForward",),     "stepForward"),
+        (("/player/playback/stepBack",),        "stepBack"),
         (("/player/playback/skipNext",),        "skipNext"),
         (("/player/playback/skipPrevious",),    "skipPrevious"),
         (("/player/playback/stop",),            "stop"),
@@ -62,6 +62,10 @@ class HttpHandler(SimpleHTTPRequestHandler):
         (("/player/playback/refreshPlayQueue",),"refreshPlayQueue"),
         (("/player/mirror/details",),           "mirror"),
     )
+
+    def __init__(self, *args, directory=None, **kwargs):
+        self.player = timelineManager.player
+        super().__init__(*args, directory=directory, **kwargs)
 
     def log_request(self, *args, **kwargs):
         pass
@@ -160,7 +164,9 @@ class HttpHandler(SimpleHTTPRequestHandler):
         for paths, handler in self.handlers:
             if path.path in paths:
                 match = True
-                getattr(self, handler)(path, query)
+                thread = threading.Thread(target=getattr(self, handler), args=(path, query,))
+                thread.daemon = True
+                thread.start()
                 break
 
         if not match:
@@ -259,7 +265,7 @@ class HttpHandler(SimpleHTTPRequestHandler):
 
         info = (("deviceClass",               "pc"),
                 ("machineIdentifier",         settings.client_uuid),
-                ("product",                   "Plex MPV Shim"),
+                ("product",                   self.player.get_product_name()),
                 ("protocolCapabilities",      capabilities),
                 ("protocolVersion",           "1"),
                 ("title",                     settings.player_name),
@@ -275,43 +281,53 @@ class HttpHandler(SimpleHTTPRequestHandler):
         address     = arguments.get("address",      None)
         protocol    = arguments.get("protocol",     "http")
         port        = arguments.get("port",         "32400")
+        token       = arguments.get("token", None)
         key         = arguments.get("key",          None)
         offset      = int(int(arguments.get("offset",   0))/1e3)
-        url         = urllib.parse.urljoin("%s://%s:%s" % (protocol, address, port), key)
+        # url         = urllib.parse.urljoin("%s://%s:%s" % (protocol, address, port), key)
         playQueue   = arguments.get("containerKey", None)
 
-        token = arguments.get("token", None)
-        if token:
-            upd_token(address, token)
+        self.player.handle_play(address, protocol, port, key, offset, playQueue, token)
+        timelineManager.SendTimelineToSubscribers()
 
-        if settings.enable_play_queue and playQueue.startswith("/playQueue"):
-            media = Media(url, play_queue=playQueue)
-        else:
-            media = Media(url)
+        # token = arguments.get("token", None)
+        # if token:
+        #     upd_token(address, token)
 
-        log.debug("HttpHandler::playMedia %s" % media)
-
-        # TODO: Select video, media and part here based off user settings
-        video = media.get_video(0)
-        if video:
-            if settings.pre_media_cmd:
-                os.system(settings.pre_media_cmd)
-            playerManager.play(video, offset)
-            timelineManager.SendTimelineToSubscribers()
+        # if settings.enable_play_queue and playQueue.startswith("/playQueue"):
+        #     media = Media(url, play_queue=playQueue)
+        # else:
+        #     media = Media(url)
+        #
+        # log.debug("HttpHandler::playMedia %s" % media)
+        #
+        # # TODO: Select video, media and part here based off user settings
+        # video = media.get_video(0)
+        # if video:
+        #     if settings.pre_media_cmd:
+        #         os.system(settings.pre_media_cmd)
+        #     self.player.handle_play(video, offset)
+        #     timelineManager.SendTimelineToSubscribers()
 
     def stop(self, path, arguments):
-        playerManager.stop()
+        self.player.stop()
         timelineManager.SendTimelineToSubscribers()
 
     def pausePlay(self, path, arguments):
-        playerManager.toggle_pause()
+        self.player.toggle_pause()
         timelineManager.SendTimelineToSubscribers()
 
     def skipNext(self, path, arguments):
-        playerManager.play_next()
+        self.player.play_next()
 
     def skipPrevious(self, path, arguments):
-        playerManager.play_prev()
+        self.player.play_prev()
+
+    def stepForward(self, path, arguments):
+        self.player.step_forward()
+
+    def stepBack(self, path, arguments):
+        self.player.step_back()
 
     def stepFunction(self, path, arguments):
         log.info("HttpHandler::stepFunction not implemented yet")
@@ -319,31 +335,22 @@ class HttpHandler(SimpleHTTPRequestHandler):
     def seekTo(self, path, arguments):
         offset = int(int(arguments.get("offset", 0))*1e-3)
         log.debug("HttpHandler::seekTo offset %ss" % offset)
-        playerManager.seek(offset)
+        self.player.seek(offset)
 
     def skipTo(self, path, arguments):
-        playerManager.skip_to(arguments["key"])
+        self.player.skip_to(arguments["key"])
 
     def set(self, path, arguments):
         if "volume" in arguments:
             volume = arguments["volume"]
             log.debug("HttpHandler::set settings volume to %s" % volume)
-            playerManager.set_volume(float(volume)/100.0)
+            self.player.set_volume(float(volume))
         if "autoPlay" in arguments:
             settings.auto_play = arguments["autoPlay"] == "1"
             settings.save()
 
-    def setStreams(self, path, arguments):
-        audioStreamID = None
-        subtitleStreamID = None
-        if "audioStreamID" in arguments:
-            audioStreamID = arguments["audioStreamID"]
-        if "subtitleStreamID" in arguments:
-            subtitleStreamID = arguments["subtitleStreamID"]
-        playerManager.set_streams(audioStreamID, subtitleStreamID)
-
     def refreshPlayQueue(self, path, arguments):
-        playerManager._video.parent.upd_play_queue()
+        self.player.update_play_queue()
         timelineManager.SendTimelineToSubscribers()
 
     def mirror(self, path, arguments):
