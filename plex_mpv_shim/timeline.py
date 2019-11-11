@@ -135,7 +135,7 @@ class TimelineManager(threading.Thread):
         if self.player.has_media_item():
 
             options["location"]          = "fullScreenVideo"
-            options["time"]              = self.player.get_play_time()
+            options["time"]              = int(self.player.get_play_time())
             options["autoPlay"]          = '1' if settings.auto_play else '0'
 
             options["ratingKey"]         = self.player.get_ratingKey()
@@ -150,9 +150,9 @@ class TimelineManager(threading.Thread):
             options["seekRange"]         = "0-%s" % options["duration"]
 
             if self.player.has_play_queue():
-                options["playQueueID"] = self.player.get_playQueueID()
-                options["playQueueVersion"] = self.player.get_playQueueVersion()
-                options["playQueueItemID"] = self.player.get_playQueueItemID()
+                options["playQueueID"] = int(self.player.get_playQueueID())
+                options["playQueueVersion"] = int(self.player.get_playQueueVersion())
+                options["playQueueItemID"] = int(self.player.get_playQueueItemID())
                 options["containerKey"] = self.player.get_playQueueKey()
 
             controllable.append("playPause")
