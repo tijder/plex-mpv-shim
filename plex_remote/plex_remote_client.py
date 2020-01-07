@@ -12,7 +12,7 @@ from .gdm import gdm
 from .timeline import timelineManager
 
 HTTP_PORT = 3000
-APP_NAME = 'plex-mpv-shim'
+APP_NAME = 'plex-remote'
 
 log = logging.getLogger('')
 

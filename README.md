@@ -5,7 +5,7 @@ With this library you can create a [remote Plex client](https://github.com/plexi
 - Implement the abstract class PlayerAbstract. As example you can look at this [file](https://gitlab.gnome.org/tijder/girens/blob/master/src/remote_player.py).  
 - Import the program like this:
 ```python
-from plex_mpv_shim.plex_remote_client import PlexRemoteClient
+from plex_remote.plex_remote_client import PlexRemoteClient
 ```
 - Start the remote client like:
 ```python
