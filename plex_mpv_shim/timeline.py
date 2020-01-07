@@ -138,6 +138,13 @@ class TimelineManager(threading.Thread):
             options["time"]              = int(self.player.get_play_time())
             options["autoPlay"]          = '1' if settings.auto_play else '0'
 
+            aid, sid = self.player.get_track_ids()
+
+            if aid:
+                options["audioStreamID"] = aid
+            if sid:
+                options["subtitleStreamID"] = sid
+
             options["ratingKey"]         = self.player.get_ratingKey()
             options["key"]               = self.player.get_key()
             options["containerKey"]      = self.player.get_key()
@@ -162,6 +169,9 @@ class TimelineManager(threading.Thread):
             controllable.append("seekTo")
             controllable.append("skipTo")
             controllable.append("autoPlay")
+
+            controllable.append("subtitleStream")
+            controllable.append("audioStream")
 
             if self.player.has_next():
                 controllable.append("skipNext")

@@ -349,6 +349,15 @@ class HttpHandler(SimpleHTTPRequestHandler):
             settings.auto_play = arguments["autoPlay"] == "1"
             settings.save()
 
+    def setStreams(self, path, arguments):
+        audioStreamID = None
+        subtitleStreamID = None
+        if "audioStreamID" in arguments:
+            audioStreamID = arguments["audioStreamID"]
+        if "subtitleStreamID" in arguments:
+            subtitleStreamID = arguments["subtitleStreamID"]
+        self.player.set_streams(audioStreamID, subtitleStreamID)
+
     def refreshPlayQueue(self, path, arguments):
         self.player.update_play_queue()
         timelineManager.SendTimelineToSubscribers()

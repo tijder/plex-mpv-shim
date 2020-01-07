@@ -131,6 +131,14 @@ class PlayerAbstract(ABC):
         pass
 
     @abstractmethod
+    def get_track_ids(self):
+        pass
+
+    @abstractmethod
+    def set_streams(self, audioStreamID, subtitleStreamID):
+        pass
+
+    @abstractmethod
     def update_play_queue(self):
         pass
 
